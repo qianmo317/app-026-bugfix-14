@@ -52,4 +52,25 @@ describe('Wake Lock（验收：获取与释放正确，无泄漏）', () => {
     expect(await g.acquire()).toBe(false)
     await g.release() // 不抛
   })
+
+  it('请求未 resolve 就 release：过期哨兵落地后立即补释放，无泄漏（StrictMode 双挂载竞态）', async () => {
+    let released = 0
+    let resolveReq: (s: { release: () => Promise<void> } | null) => void = () => {}
+    const pending = new Promise((resolve) => {
+      resolveReq = resolve
+    })
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: { request: () => pending as Promise<{ release: () => Promise<void> }> },
+    })
+
+    const g = new WakeLockGuard()
+    const acquirePromise = g.acquire() // 挂起中
+    expect(g.active).toBe(false)
+    await g.release() // 在 request resolve 前退出（模拟组件卸载）
+    resolveReq({ release: async () => { released++ } })
+    expect(await acquirePromise).toBe(false)
+    expect(released).toBe(1) // 过期哨兵被立即补释放
+    expect(g.active).toBe(false)
+  })
 })

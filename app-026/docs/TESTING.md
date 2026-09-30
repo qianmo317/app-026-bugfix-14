@@ -85,8 +85,11 @@ npx playwright test --headed      # 有头模式观察执行
 | 1 | 编辑页整页白屏，console 报 React #310 | hooks（useMemo）位于条件 `return` 之后，两次渲染 hooks 数量不一致 | `ScriptEditor.tsx`：条件 return 后改普通计算（Map 构建） |
 | 2 | 行标记在行级 DOM 无体现，E2E `line-row[data-marks*=…]` 找不到 | `line-row` 未渲染 `data-marks` 属性 | 补 `data-marks={line.marks.join(' ')}`（空数组不渲染） |
 | 3 | 设置修改后立即刷新/关页会丢失（E2E：排练页字号仍是自动值 94） | IndexedDB 写入在页面卸载时不可靠 + 300ms 防抖窗口 | 改为**无防抖**：localStorage 同步直写 + IndexedDB 双写，读侧 `savedAt` 取新合并（`repo.ts`） |
-| 4 | 按一次 `↑` 速度 +20（E2E：期望 100 实得 110） | `changeSpeed` 在 `setSpeed(speed+10)` 后又 `patch({speedPxPerSec: engine.speedValue + d})` 多加一次 `d`，设置同步回引擎放大 | `Prompt.tsx` / `Stage.tsx`：patch 改为 `engine.speedValue`（已是调速后值） |
+| 4 | 按一次 `↑` 速度 +20（E2E：期望 100 实得 110） | `changeSpeed` 在 `setSpeed(speed+10)` 后又 `patch({speedPxPerSec: engine.speedValue + d})` 多加一次 `d`，设置同步回引擎放大 | `Prompt.tsx`：patch 改为 `engine.speedValue`（已是调速后值）；`Stage.tsx` 同病但残留的是改坏版本（setSpeed 没加 d），一并改为 `setSpeed(speed+d)` + `patch(调速后值)`，并订阅引擎刷新速度显示 |
 | 5 | 循环练习计数记到**下一段**的行（E2E：徽标不出现） | `indexAt()` 四舍五入使 pos ≥ 3.5×行高时 idx 已越界到下一段 → `onLoopIteration` 闭包捕获错误段索引 | `Prompt.tsx`：开启循环时把本段 `lineIds` 存入 `loopLineIdsRef`，回调直接使用（见架构 D5） |
+| 6 | 演出页退回排练页后屏幕常亮一整晚不关 | `Stage.tsx` 进入时 `wakeLock.request` 无配对 release（挂载 effect 无清理函数） | 卸载 effect 中 `wakeRef.release()`；`WakeLockGuard` 加代际计数，覆盖 StrictMode「请求未 resolve 即卸载」竞态（过期哨兵立即补释放） |
+| 7 | 进入演出模式实际从未全屏 | 首帧剧本未加载渲染无 `ref` 占位 div，挂载 effect 中 `rootRef.current` 为 null，`requestFullscreen` 被可选链静默跳过 | 全屏请求移到根元素挂载后的独立 effect，卸载时配对 `exitFullscreen` |
+| 8 | 取消「进入演出模式自动锁定」后再进仍上锁 | 锁定初值读取设置，但与进入态生命周期耦合不清 | 锁定初值在进入 effect 中只跟随一次设置；`stage.test.tsx` 组件回归覆盖「勾选即锁→取消后再进不锁」 |
 
 > 复盘：#3/#4/#5 均由 E2E 在真实浏览器中暴露，静态审查与单元测试未覆盖——**「写完单测不等于功能正确」**；#1 由浏览器点测诊断脚本抓到 console error 定位。
 
