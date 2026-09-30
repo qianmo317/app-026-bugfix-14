@@ -6,7 +6,7 @@
 ## 1. 测试体系总览
 
 ```
-单元测试 (vitest, 41 例)      → 引擎/解析/存储/协议的确定性断言
+单元测试 (vitest, 42 例)      → 引擎/解析/存储/协议的确定性断言
         ↓
 E2E (Playwright, 6 组 spec)   → 真实浏览器全旅程与性能
         ↓
@@ -18,14 +18,14 @@ Docker 自检                   → 镜像体积/healthz/SPA 回退/容器健康
 运行方式（均在 `app-026/`）：
 
 ```bash
-npm test                          # 单元测试，一次性 41 例
+npm test                          # 单元测试，一次性 42 例
 npx vitest                        # watch 模式
 npm run e2e                       # 全部 E2E（webServer 自动起 preview :4173）
 npx playwright test tests/e2e/journey.spec.ts    # 单个 spec
 npx playwright test --headed      # 有头模式观察执行
 ```
 
-## 2. 单元测试（tests/unit/，41 例全绿）
+## 2. 单元测试（tests/unit/，42 例全绿）
 
 | 文件 | 环境 | 覆盖点 |
 |---|---|---|
@@ -35,12 +35,12 @@ npx playwright test --headed      # 有头模式观察执行
 | `virtual.test.ts` | node | 可视窗口计算边界（首/尾/越界/窗口收缩） |
 | `keys.test.ts` | jsdom | 默认键位表；自定义持久化；损坏 JSON 回退默认；localStorage 不可用时内存回退（vi.stubGlobal） |
 | `db.test.ts` | node | fake-indexeddb：四 store 建库、get/put/delete/getAll；设置保存读取往返（含 savedAt 剥离与默认值合并） |
-| `wakelock.test.ts` | jsdom | WakeLockGuard 获取/释放**配对**（防泄漏）；不支持环境静默降级 |
+| `wakelock.test.ts` | jsdom | WakeLockGuard 获取/释放**配对**（防泄漏）；`release()` 先于异步 `request` 返回时释放迟到 sentinel（StrictMode/快速退页）；不支持环境静默降级 |
 | `remote.test.ts` | node | 4 位配对码生成；`isRemoteCommand`/`isRemoteStatus` 类型守卫拒绝非法消息；合法消息往返 |
 
 工具：`tests/unit/setup.ts` 加载 fake-indexeddb（auto 注册），jsdom 环境文件按文件头注释 `// @vitest-environment jsdom` 切换。
 
-## 3. E2E 测试（tests/e2e/，6 组全绿）
+## 3. E2E 测试（tests/e2e/，7 组全绿）
 
 | Spec | 场景 |
 |---|---|
@@ -50,6 +50,7 @@ npx playwright test --headed      # 有头模式观察执行
 | `perf.spec.ts` | 5000 行文稿滚动 ≥ 55fps（rAF 计时采样，retries=2） |
 | `offline.spec.ts` | 断网后所有操作纯本地：SPA 内跳转、编辑保存、排练播放（客户端路由不 reload） |
 | `remote.spec.ts` | 双 context：提词端显示 4 位配对码（字母数字混合）→ 遥控端连接 → 播放/暂停/调速/跳段指令生效 + 状态回报 |
+| `stage-lifecycle.spec.ts` | 自动锁定开关跟随设置（开→锁、关→不锁）；演出页调速每按一次只变 ±10 且数字即时刷新；退回排练页速度同步；两次进入/退出 Wake Lock `request`/`release` 严格配对 |
 
 `playwright.config.ts`：`workers: 1`（计时断言稳定性）、baseURL `:4173`、webServer 自动起 `vite preview`（`reuseExistingServer: true`）。
 
@@ -71,7 +72,7 @@ npx playwright test --headed      # 有头模式观察执行
 | 3 | 5s 过门停 5s（±100ms），可手动跳过 | `scroller.test.ts` ±100ms + journey 主旅程 | ✅ |
 | 4 | 单段循环 10 次位置与耗时符合预期 | `scroller.test.ts` 循环断言 | ✅ |
 | 5 | 演出模式锁定点击无效、长按 2s 退出 | journey 主旅程（盾层消失断言） | ✅ |
-| 6 | Wake Lock 获取/释放无泄漏 | `wakelock.test.ts` 配对断言 | ✅ |
+| 6 | Wake Lock 获取/释放无泄漏 | `wakelock.test.ts` 配对/迟到 sentinel 断言 + `stage-lifecycle.spec.ts` 两次进出配对计数 | ✅ |
 | 7 | 5000 行 ≥ 55fps | `perf.spec.ts` | ✅ |
 | 8 | 刷新后文稿与标记仍在 | journey 主旅程持久化段 | ✅ |
 | 9 | 快捷键全部生效、可自定义并持久化 | `keys.test.ts` + journey 设置与键位 | ✅ |
@@ -87,6 +88,9 @@ npx playwright test --headed      # 有头模式观察执行
 | 3 | 设置修改后立即刷新/关页会丢失（E2E：排练页字号仍是自动值 94） | IndexedDB 写入在页面卸载时不可靠 + 300ms 防抖窗口 | 改为**无防抖**：localStorage 同步直写 + IndexedDB 双写，读侧 `savedAt` 取新合并（`repo.ts`） |
 | 4 | 按一次 `↑` 速度 +20（E2E：期望 100 实得 110） | `changeSpeed` 在 `setSpeed(speed+10)` 后又 `patch({speedPxPerSec: engine.speedValue + d})` 多加一次 `d`，设置同步回引擎放大 | `Prompt.tsx` / `Stage.tsx`：patch 改为 `engine.speedValue`（已是调速后值） |
 | 5 | 循环练习计数记到**下一段**的行（E2E：徽标不出现） | `indexAt()` 四舍五入使 pos ≥ 3.5×行高时 idx 已越界到下一段 → `onLoopIteration` 闭包捕获错误段索引 | `Prompt.tsx`：开启循环时把本段 `lineIds` 存入 `loopLineIdsRef`，回调直接使用（见架构 D5） |
+| 6 | 关掉「进入演出模式自动锁定」后再进演出页，依旧锁定 | 锁定初值在挂载 effect 里 `setLocked(settings.lockStage)`，发生在首帧 `false` 渲染之后，旧盾层状态/时序掩盖了设置 | `Stage.tsx`：锁定初值改为 `useState(() => settings.lockStage)`，进入即按当前设置决定 |
+| 7 | 从演出页退回排练页，屏幕常亮一夜不关闭 | 只 acquire 没有 cleanup 配对 release；StrictMode 下首个请求还可能在卸载后才 resolve，sentinel 无人释放 | `Stage.tsx`：effect cleanup 配对 `release()` + 退全屏；`WakeLockGuard`：请求序号淘汰迟到 sentinel 并主动释放 |
+| 8 | 演出页加减速按一次数字不动，回排练页却偏两档 | `setSpeed(speed)` 空转后又 `patch(speed + d)`：演出页不订阅速度所以不刷新，设置回灌引擎再叠加一档；且没有速度显示 | `Stage.tsx`：`setSpeed(speed + d)` 后回写调速后值；订阅 engine 变化并显示 `stage-speed-value` |
 
 > 复盘：#3/#4/#5 均由 E2E 在真实浏览器中暴露，静态审查与单元测试未覆盖——**「写完单测不等于功能正确」**；#1 由浏览器点测诊断脚本抓到 console error 定位。
 

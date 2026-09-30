@@ -13,21 +13,37 @@ export function Stage({ id }: { id: string }) {
   const { settings, patch } = useSettingsCtx()
   const { script } = useScript(id)
   const engine = useEngine(settings)
-  const [locked, setLocked] = useState(false)
+  const [locked, setLocked] = useState(() => !!settings?.lockStage)
+  const [speed, setSpeed] = useState(() => engine.speedValue)
   const [controlsVisible, setControlsVisible] = useState(true)
   const [wakeOk, setWakeOk] = useState<boolean | null>(null)
   const [pressProgress, setPressProgress] = useState(0)
   const rootRef = useRef<HTMLDivElement>(null)
-  const wakeRef = useRef<WakeLockGuard>(new WakeLockGuard())
   const hideTimer = useRef<number | undefined>(undefined)
   const pressRaf = useRef<number>(0)
   const autoStarted = useRef(false)
 
-  // 进入演出模式：全屏 + 常亮；退出时正确释放（防泄漏）
+  // 进入演出模式：全屏 + 常亮；退出时逐项释放，不能留下跨页 Wake Lock
   useEffect(() => {
-    wakeRef.current.acquire().then(setWakeOk)
-    rootRef.current?.requestFullscreen?.().catch(() => {})
-    setLocked(!!settings?.lockStage)
+    const guard = new WakeLockGuard()
+    let alive = true
+    guard.acquire().then((ok) => {
+      if (alive) setWakeOk(ok)
+    })
+    rootRef.current
+      ?.requestFullscreen?.()
+      .then(() => {
+        if (!alive && document.fullscreenElement === rootRef.current) {
+          void document.exitFullscreen().catch(() => {})
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      alive = false
+      void guard.release()
+      if (document.fullscreenElement === rootRef.current) void document.exitFullscreen().catch(() => {})
+    }
   }, [])
 
   // 控件自动隐藏
@@ -40,6 +56,12 @@ export function Stage({ id }: { id: string }) {
     poke()
     return () => window.clearTimeout(hideTimer.current)
   }, [])
+
+  useEffect(() => {
+    const updateSpeed = () => setSpeed(engine.speedValue)
+    updateSpeed()
+    return engine.subscribe(updateSpeed)
+  }, [engine])
 
   const autoStartedRef = autoStarted
   useEffect(() => {
@@ -81,12 +103,15 @@ export function Stage({ id }: { id: string }) {
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      cancelAnimationFrame(pressRaf.current)
+    }
   }, [locked])
 
   const changeSpeed = (d: number) => {
-    engine.setSpeed(engine.speedValue)
-    patch({ speedPxPerSec: engine.speedValue + d })
+    engine.setSpeed(engine.speedValue + d)
+    patch({ speedPxPerSec: engine.speedValue })
   }
 
   if (!script || !settings) return <div className="page center">加载中…</div>
@@ -102,8 +127,9 @@ export function Stage({ id }: { id: string }) {
           <button className="tbtn" data-testid="btn-stage-play" onClick={() => engine.toggle()} aria-label="播放暂停">
             {engine.state === 'playing' || engine.state === 'holding' ? <Pause size={18} /> : <Play size={18} />}
           </button>
-          <button className="tbtn" onClick={() => changeSpeed(-10)} aria-label="减速"><Minus size={16} /></button>
-          <button className="tbtn" onClick={() => changeSpeed(10)} aria-label="加速"><Plus size={16} /></button>
+          <button className="tbtn" onClick={() => changeSpeed(-10)} data-testid="btn-stage-slower" aria-label="减速"><Minus size={16} /></button>
+          <span className="speed" data-testid="stage-speed-value">{speed}px/s</span>
+          <button className="tbtn" onClick={() => changeSpeed(10)} data-testid="btn-stage-faster" aria-label="加速"><Plus size={16} /></button>
           <button className="tbtn" onClick={() => jumpToSegment(engine, segmentRanges(script), curSegOf(engine, script) + 1)} aria-label="下一段"><ChevronRight size={18} /></button>
           <button className="tbtn" onClick={() => patch({ theme: settings.theme === 'highContrast' ? 'dark' : 'highContrast' })} aria-label="高对比切换"><Contrast size={16} /></button>
           {wakeOk === false && <span className="wake-tip muted">屏幕常亮不可用，请手动设置系统不休屏</span>}

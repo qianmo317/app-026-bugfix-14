@@ -13,6 +13,7 @@ type WakeLockNav = Navigator & {
  */
 export class WakeLockGuard {
   private sentinel: WakeLockSentinelLike | null = null
+  private requestSeq = 0
 
   supported(): boolean {
     return typeof navigator !== 'undefined' && 'wakeLock' in navigator
@@ -22,8 +23,19 @@ export class WakeLockGuard {
     if (this.sentinel) return true
     const nav = navigator as WakeLockNav | undefined
     if (!nav || !nav.wakeLock) return false
+    const seq = ++this.requestSeq
     try {
       const sentinel = await nav.wakeLock.request('screen')
+      // React StrictMode 或快速退页时，请求可能在 release() 之后才返回。
+      // 这个 sentinel 不能再保存，否则会形成永远释放不掉的常亮锁。
+      if (seq !== this.requestSeq) {
+        try {
+          await sentinel.release()
+        } catch {
+          /* 已释放则忽略 */
+        }
+        return false
+      }
       this.sentinel = sentinel
       return true
     } catch {
@@ -32,6 +44,7 @@ export class WakeLockGuard {
   }
 
   async release(): Promise<void> {
+    this.requestSeq++
     const s = this.sentinel
     this.sentinel = null
     if (s) {

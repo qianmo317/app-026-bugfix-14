@@ -37,6 +37,34 @@ describe('Wake Lock（验收：获取与释放正确，无泄漏）', () => {
     expect(released).toBe(2)
   })
 
+  it('release 先于异步 request 返回时，会释放迟到的 sentinel 且不泄漏', async () => {
+    let resolveRequest: ((sentinel: { release: () => Promise<void> }) => void) | null = null
+    let released = 0
+    const sentinel = {
+      release: async () => {
+        released++
+      },
+    }
+    Object.defineProperty(navigator, 'wakeLock', {
+      configurable: true,
+      value: {
+        request: () =>
+          new Promise((resolve) => {
+            resolveRequest = resolve
+          }),
+      },
+    })
+
+    const g = new WakeLockGuard()
+    const acquired = g.acquire()
+    await g.release()
+    resolveRequest!(sentinel)
+
+    expect(await acquired).toBe(false)
+    expect(released).toBe(1)
+    expect(g.active).toBe(false)
+  })
+
   it('request 拒绝时 acquire 返回 false 而不抛出', async () => {
     Object.defineProperty(navigator, 'wakeLock', {
       configurable: true,

@@ -102,7 +102,7 @@
 | Home | `/` | 剧目列表/新建/粘贴导入/示例导入（fetch `/samples/*.txt`）/模板实例化/删除 |
 | ScriptEditor | `/script/:id` | 粘贴替换/追加、行编辑与标记（hard/power/drag）、cue chips（秒数编辑）、批注、增删行、分段（✂ 拆分/重命名/循环勾选）、提醒卡、存模板 |
 | Prompt | `/prompt/:id` | 排练：双引擎分栏（双人）、跳段（保播放状态 + 段循环标记自动续圈）、循环开关、调速、主题循环、全屏、提醒卡、遥控监听、**循环计时（见 §3 D5）** |
-| Stage | `/prompt/:id/stage` | 演出：Wake Lock 配对获取/释放、全屏、控件 2.5s 自动隐藏、锁定盾层（长按 2s SVG 进度环、Esc 解锁） |
+| Stage | `/prompt/:id/stage` | 演出：锁定初值直接取 `settings.lockStage`、Wake Lock/全屏进入获取退出释放（cleanup 严格配对，迟到 sentinel 主动释放）、控件 2.5s 自动隐藏、锁定盾层（长按 2s SVG 进度环、Esc 解锁）、订阅引擎速度并即时显示，调速每次 ±10 |
 | Remotes | `/remotes` | 配对码输入、连接状态、遥控按钮（含数字跳段） |
 | Settings | `/settings` | 全部设置项 + 键位自定义表（remap 捕获 keydown）+ 恢复默认 + 遥控码 |
 | Print | `/print/:id` | 打印版（段落 + 标记色条 + 批注 + 图例，`@media print`） |
